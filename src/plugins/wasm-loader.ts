@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Tool, ToolResult } from "../tools/types.js";
-import type { MaxiPlugin, PluginContext } from "./types.js";
+import type { PluginContext } from "./types.js";
 
 interface WasmPluginConfig {
   name: string;
@@ -128,6 +128,6 @@ export class WasmPluginLoader {
   }
 }
 
-function context_log(message: string): void {
+function context_log(_message: string): void {
   // Placeholder for plugin logging — wired by PluginContext
 }

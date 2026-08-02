@@ -1,5 +1,5 @@
-import { readFile, writeFile, readdir, stat, realpath } from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { readFile, writeFile, readdir, stat } from "node:fs/promises";
+import { existsSync, realpathSync } from "node:fs";
 import { join, resolve, relative, isAbsolute } from "node:path";
 import type { Tool, ToolResult } from "./types.js";
 
@@ -7,14 +7,12 @@ const PROJECT_ROOT = resolve(process.cwd());
 
 function validatePath(path: string): string {
   const absolute = isAbsolute(path) ? path : resolve(PROJECT_ROOT, path);
-  const real = realpathSync.native ? realpathSync.native(absolute) : absolute;
+  const real = realpathSync(absolute);
   if (!real.startsWith(PROJECT_ROOT)) {
     throw new Error(`Path traversal denied: ${path}`);
   }
   return absolute;
 }
-
-import { realpathSync } from "node:fs";
 
 async function read(path: string): Promise<ToolResult> {
   try {

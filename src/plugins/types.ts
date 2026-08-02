@@ -1,4 +1,4 @@
-import type { Tool, ToolResult } from "../tools/types.js";
+import type { Tool } from "../tools/types.js";
 
 export interface MaxiPlugin {
   name: string;

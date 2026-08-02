@@ -1,11 +1,11 @@
 import * as readline from "node:readline";
 import { stdin, stdout } from "node:process";
 import chalk from "chalk";
-import { generateText, streamText } from "ai";
+import { streamText } from "ai";
 import type { LanguageModel } from "ai";
 import { ContextEngine } from "./context/engine.js";
 import type { AgentOrchestrator } from "./agents/orchestrator.js";
-import fetch, { type Response } from "node-fetch";
+import fetch from "node-fetch";
 
 export interface ReplOptions {
   model: LanguageModel;
@@ -14,7 +14,7 @@ export interface ReplOptions {
   systemPrompt?: string;
   provider?: string;
   modelName?: string;
-  registry?: any; // Provider registry for model switching
+  registry?: ReturnType<typeof import("./providers/registry.js").buildRegistry>;
 }
 
 export class Repl {
@@ -27,7 +27,7 @@ export class Repl {
   private running = false;
   private provider: string;
   private modelName: string;
-  private registry: any;
+  private registry: ReturnType<typeof import("./providers/registry.js").buildRegistry> | undefined;
 
   constructor(opts: ReplOptions) {
     this.model = opts.model;
