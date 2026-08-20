@@ -3,6 +3,7 @@ import { stdin, stdout } from "node:process";
 import chalk from "chalk";
 import { streamText } from "ai";
 import type { LanguageModel } from "ai";
+import type { MaxiConfig } from "./providers/types.js";
 import { ContextEngine } from "./context/engine.js";
 import type { AgentOrchestrator } from "./agents/orchestrator.js";
 import fetch from "node-fetch";
@@ -15,6 +16,7 @@ export interface ReplOptions {
   provider?: string;
   modelName?: string;
   registry?: ReturnType<typeof import("./providers/registry.js").buildRegistry>;
+  config?: MaxiConfig;
 }
 
 export class Repl {

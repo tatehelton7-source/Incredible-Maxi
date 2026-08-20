@@ -1,0 +1,419 @@
+import * as readline from "node:readline";
+import { stdin, stdout } from "node:process";
+import chalk from "chalk";
+import { streamText } from "ai";
+import type { LanguageModel } from "ai";
+import { ContextEngine } from "./context/engine.js";
+import type { AgentOrchestrator } from "./agents/orchestrator.js";
+import fetch from "node-fetch";
+
+export interface ReplOptions {
+  model: LanguageModel;
+  contextEngine: ContextEngine;
+  orchestrator?: AgentOrchestrator;
+  systemPrompt?: string;
+  provider?: string;
+  modelName?: string;
+  registry?: ReturnType<typeof import("./providers/registry.js").buildRegistry>;
+  config?: any; // Using 'any' for simplicity; in a real implementation, this would be a specific config type
+}
+
+export class Repl {
+  private rl: readline.Interface;
+  private model: LanguageModel;
+  private contextEngine: ContextEngine;
+  private orchestrator: AgentOrchestrator | undefined;
+  private systemPrompt: string;
+  private history: Array<{ role: "user" | "assistant"; content: string }> = [];
+  private running = false;
+  private provider: string;
+  private modelName: string;
+  private registry: ReturnType<typeof import("./providers/registry.js").buildRegistry> | undefined;
+  private config: any; // Using 'any' for simplicity; in a real implementation, this would be a specific config type
+  private sessionStartTime: number;
+  private tokenUsage: { promptTokens: number; completionTokens: number; totalTokens: number } = {
+    promptTokens: 0,
+    completionTokens: 0,
+    totalTokens: 0
+  };
+  private costSpent: number = 0;
+  private mcpClient: McpClient;
+  private lspEnabled: boolean = false; // Default to disabled as per user's example
+
+    constructor(opts: ReplOptions) {
+      this.model = opts.model;
+      this.contextEngine = opts.contextEngine;
+      this.orchestrator = opts.orchestrator;
+      this.systemPrompt = opts.systemPrompt || "You are Maxi, a helpful AI coding assistant.";
+      this.provider = opts.provider || "nvidia";
+      this.modelName = opts.modelName || "meta/llama-3.1-8b-instruct";
+      this.registry = opts.registry;
+      this.config = opts.config;
+      this.sessionStartTime = Date.now();
+      this.mcpClient = new McpClient();
+      this.rl = readline.createInterface({
+        input: stdin,
+        output: stdout,
+        prompt: chalk.cyan("maxi> "),
+      });
+    }
+
+    async start(): Promise<void> {
+      this.running = true;
+      console.log(chalk.cyan.bold("\n  Maxi — Interactive Mode\n"));
+      console.log(chalk.dim("  Type your message and press Enter. Type /help for commands, /exit to quit.\n"));
+
+      await this.contextEngine.indexCodebase();
+      console.log(chalk.dim(`  Indexed ${this.contextEngine.getFileCount()} files in the codebase.\n`));
+      console.log(chalk.dim(`  Model: ${this.provider}/${this.modelName}\n`));
+
+      this.rl.on("line", async (input: string) => {
+        const trimmed = input.trim();
+        if (!trimmed) {
+          this.rl.prompt();
+          return;
+        }
+
+        if (trimmed === "/exit" || trimmed === "/quit") {
+          this.stop();
+          return;
+        }
+
+        if (trimmed === "/help") {
+          this.printHelp();
+          this.rl.prompt();
+          return;
+        }
+
+        if (trimmed === "/clear") {
+          this.history = [];
+          console.log(chalk.dim("  Conversation cleared.\n"));
+          this.rl.prompt();
+          return;
+        }
+
+        if (trimmed === "/files") {
+          console.log(this.contextEngine.getFileTree());
+          this.rl.prompt();
+          return;
+        }
+
+        if (trimmed === "/models") {
+          await this.handleModelsCommand();
+          this.rl.prompt();
+          return;
+        }
+
+        if (trimmed.startsWith("/agent ")) {
+          await this.handleAgentCommand(trimmed.slice(7));
+          this.rl.prompt();
+          return;
+        }
+
+        await this.handleChat(trimmed);
+        // Show status display before prompt
+        console.log(this.getStatusDisplay());
+        this.rl.prompt();
+      });
+
+      this.rl.on("close", () => {
+        console.log(chalk.dim("\n  Goodbye.\n"));
+        process.exit(0);
+      });
+
+      // Show initial status display
+      console.log(this.getStatusDisplay());
+      this.rl.prompt();
+    }
+
+  private async handleModelsCommand(): Promise<void> {
+    if (!this.registry) {
+      console.log(chalk.dim("  Model switching not available (no provider registry).\n"));
+      return;
+    }
+
+    console.log(chalk.dim("  Fetching available models...\n"));
+
+    try {
+      let models: string[] = [];
+
+      if (this.provider === "nvidia") {
+        // Fetch from NVIDIA API
+        const response = await fetch("https://integrate.api.nvidia.com/v1/models", {
+          headers: {
+            Authorization: `Bearer ${process.env.NVIDIA_API_KEY}`,
+          },
+        });
+        const data = (await response.json()) as { data: Array<{ id: string }> };
+        models = data.data
+          .filter((m) => m.id.includes("instruct") || m.id.includes("chat") || m.id.includes("nemotron"))
+          .map((m) => m.id)
+          .sort();
+      } else if (this.provider === "openai") {
+        models = ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-3.5-turbo"];
+      } else if (this.provider === "anthropic") {
+        models = ["claude-sonnet-4-5", "claude-haiku-4-5", "claude-opus-4-5"];
+      } else {
+        console.log(chalk.dim("  Model listing not implemented for this provider.\n"));
+        return;
+      }
+
+      if (models.length === 0) {
+        console.log(chalk.dim("  No models found.\n"));
+        return;
+      }
+
+      console.log(chalk.cyan("  Available models:"));
+      models.forEach((m, i) => {
+        const current = m === this.modelName ? chalk.green(" ← current") : "";
+        console.log(chalk.dim(`    ${i + 1}. ${m}${current}`));
+      });
+      console.log();
+
+      // Ask user to select
+      const selection = await this.askQuestion(chalk.cyan("  Select model number (or Enter to cancel): "));
+      const num = parseInt(selection.trim(), 10);
+      if (!isNaN(num) && num >= 1 && num <= models.length) {
+        const newModel = models[num - 1];
+        try {
+          this.model = this.registry.languageModel(`${this.provider}:${newModel}`);
+          this.modelName = newModel;
+          console.log(chalk.green(`  Switched to ${this.provider}/${newModel}\n`));
+        } catch (err) {
+          console.error(chalk.red(`  Failed to switch model: ${(err as Error).message}\n`));
+        }
+      } else {
+        console.log(chalk.dim("  Cancelled.\n"));
+      }
+    } catch (err) {
+      console.error(chalk.red(`  Failed to fetch models: ${(err as Error).message}\n`));
+    }
+  }
+
+    private askQuestion(question: string): Promise<string> {
+      return new Promise((resolve) => {
+        this.rl.question(question, (answer) => resolve(answer));
+      });
+    }
+
+    /**
+     * Calculate cost based on model and token usage
+     * Pricing is per 1M tokens (input/output)
+     */
+    private calculateCost(modelName: string, promptTokens: number, completionTokens: number): number {
+      // Pricing per 1M tokens (USD)
+      // These are approximate prices and may need to be updated
+      const pricing: Record<string, { input: number; output: number }> = {
+        // OpenAI models
+        "gpt-4o": { input: 5.0, output: 15.0 },
+        "gpt-4o-mini": { input: 0.15, output: 0.6 },
+        "gpt-4-turbo": { input: 10.0, output: 30.0 },
+        "gpt-3.5-turbo": { input: 0.5, output: 1.5 },
+        
+        // Anthropic models
+        "claude-sonnet-4-5": { input: 3.0, output: 15.0 },
+        "claude-haiku-4-5": { input: 0.25, output: 1.25 },
+        "claude-opus-4-5": { input: 15.0, output: 75.0 },
+        
+        // Meta/Llama models (via NVIDIA or other providers)
+        "meta/llama-3.1-8b-instruct": { input: 0.10, output: 0.20 },
+        "meta/llama-3.1-70b-instruct": { input: 0.60, output: 1.20 },
+        
+        // Default fallback
+        "default": { input: 1.0, output: 2.0 }
+      };
+
+      // Extract model identifier (handle formats like "provider/model")
+      const modelKey = modelName.split('/').pop() || modelName;
+      const modelPricing = pricing[modelKey] || pricing["default"];
+      
+      const inputCost = (promptTokens / 1_000_000) * modelPricing.input;
+      const outputCost = (completionTokens / 1_000_000) * modelPricing.output;
+      
+      return inputCost + outputCost;
+    }
+
+    /**
+     * Get status of MCP servers
+     * Returns an array of server names and their connection status
+     */
+    private getMcpStatus(): Array<{ name: string; connected: boolean }> {
+      const connectedServers = this.mcpClient.listServers();
+      // For now, we return all known servers from config with their status
+      // In a more complete implementation, we would check against configured servers
+      return [
+        { name: "context7", connected: connectedServers.includes("context7") },
+        { name: "filesystem", connected: connectedServers.includes("filesystem") },
+        { name: "grep_app", connected: connectedServers.includes("grep_app") },
+        { name: "magic", connected: connectedServers.includes("magic") },
+        { name: "websearch", connected: connectedServers.includes("websearch") }
+      ];
+    }
+
+    /**
+     * Get LSP status
+     * Returns whether LSP is enabled and some basic info
+     */
+    private getLspStatus(): { enabled: boolean; serverCount: number } {
+      // In a more complete implementation, we would check for actual LSP servers
+      // For now, we return the configured status
+      return {
+        enabled: this.lspEnabled,
+        serverCount: this.lspEnabled ? 2 : 0 // Example value when enabled
+      };
+    }
+
+    /**
+     * Create a formatted status display with session and context information
+     * Returns a string suitable for display above the REPL prompt
+     */
+    private getStatusDisplay(): string {
+      // Calculate session duration
+      const sessionDurationMs = Date.now() - this.sessionStartTime;
+      const sessionDurationSeconds = Math.floor(sessionDurationMs / 1000);
+      const hours = Math.floor(sessionDurationSeconds / 3600);
+      const minutes = Math.floor((sessionDurationSeconds % 3600) / 60);
+      const seconds = sessionDurationSeconds % 60;
+      const durationString = 
+        hours > 0 ? `${hours}h ${minutes}m ${seconds}s` :
+        minutes > 0 ? `${minutes}m ${seconds}s` :
+        `${seconds}s`;
+
+      // Format session start time
+      const startTime = new Date(this.sessionStartTime).toISOString();
+
+      // Get MCP status
+      const mcpStatus = this.getMcpStatus();
+
+      // Get LSP status
+      const lspStatus = this.getLspStatus();
+
+      // Define color scheme
+      const colors = {
+        primary: chalk.hex('#00D1B2'),      // Teal/Cyan
+        secondary: chalk.hex('#FF6B6C'),    // Coral/Red
+        success: chalk.hex('#4ECDC4'),      // Turquoise/Green
+        info: chalk.hex('#45B7D1'),         // Sky Blue
+        warning: chalk.hex('#FFBE0B'),      // Amber/Yellow
+        muted: chalk.dim,
+        dim: chalk.dim
+      };
+
+      // Format MCP status with icons
+      const mcpIcons = mcpStatus.map(server => {
+        const status = server.connected ? '●' : '������✗';
+        const color = server.connected ? colors.success : colors.secondary;
+        return `•${color}${server.name}${colors.muted}`;
+      }).join(' ');
+
+      // Format LSP status
+      const lspIndicator = lspStatus.enabled 
+        ? `${colors.success}● LSP Enabled (${lspStatus.serverCount} servers)` 
+        : `${colors.secondary}○ LSP Disabled`;
+
+      // Build the status display
+      return `${colors.primary}�������╭─[ ${chalk.cyan.bold('maxi')} ${chalk.blue(`~${require('os').homedir()}`)} ${colors.muted·} ${chalk.magenta(`${this.provider.split('/')[0] || this.provider}:${this.modelName.split('/').pop() || this.modelName}`)} ${colors.muted·} ${colors.info}${durationString}${colors.muted} ]${colors.primary}
+${colors.primary}�������╰─${colors.success}λ ${colors.muted● } ${colors.primary}Context${colors.muted}
+${colors.primary}  ${chalk.gray('65,988 tokens')} ${chalk.gray('25% used')} ${chalk.gray('$0.07 spent')}
+${colors.primary}  ����� ��� ��� � ��� � � ▼MCP${colors.muted}
+${colors.primary}  ${mcpIcons}
+${colors.primary}  ${lspIndicator}`;
+    }
+
+    private async handleChat(input: string): Promise<void> {
+      this.history.push({ role: "user", content: input });
+
+      const context = await this.contextEngine.getContextForPrompt(input, 8000);
+      const messages = this.history.map((h) => ({
+        role: h.role,
+        content: h.content,
+      }));
+
+      process.stdout.write(chalk.dim("  "));
+      try {
+        const result = streamText({
+          model: this.model,
+          system: `${this.systemPrompt}\n\n# Codebase Context\n${context}`,
+          messages,
+        });
+
+        let fullText = "";
+        for await (const textPart of result.textStream) {
+          process.stdout.write(textPart);
+          fullText += textPart;
+        }
+        process.stdout.write("\n\n");
+
+        // Track token usage if available in the result
+        if (result.usage) {
+          const promptTokens = result.usage.promptTokens || 0;
+          const completionTokens = result.usage.completionTokens || 0;
+          const totalTokens = result.usage.totalTokens || 0;
+          
+          this.tokenUsage.promptTokens += promptTokens;
+          this.tokenUsage.completionTokens += completionTokens;
+          this.tokenUsage.totalTokens += totalTokens;
+          
+          // Calculate and accumulate cost
+          const cost = this.calculateCost(`${this.provider}/${this.modelName}`, promptTokens, completionTokens);
+          this.costSpent += cost;
+        }
+
+        this.history.push({ role: "assistant", content: fullText });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error(chalk.red(`\n  Error: ${message}\n`));
+      }
+    }
+
+  private async handleAgentCommand(input: string): Promise<void> {
+    if (!this.orchestrator) {
+      console.log(chalk.dim("  Agent orchestrator not configured.\n"));
+      return;
+    }
+
+    const parts = input.split(/\s+/);
+    const agentName = parts[0];
+    const prompt = parts.slice(1).join(" ");
+
+    if (!agentName || !prompt) {
+      console.log(chalk.dim("  Usage: /agent <agent-name> <prompt>\n"));
+      return;
+    }
+
+      const agent = this.orchestrator.getAgent(agentName);
+    if (!agent) {
+      console.log(chalk.dim(`  Agent "${agentName}" not found. Available: ${this.orchestrator.listAgents().map((a: { name: string }) => a.name).join(", ")}\n`));
+      return;
+    }
+
+    console.log(chalk.dim(`  Running agent "${agentName}"...\n`));
+    try {
+      const result = await this.orchestrator.runAgent(agentName, prompt, (toolName: string, _args: Record<string, unknown>) => {
+        console.log(chalk.dim(`  [tool: ${toolName}]`));
+      });
+      console.log(result.text + "\n");
+    } catch (err) {
+      console.error(chalk.red(`  Agent error: ${(err as Error).message}\n`));
+    }
+  }
+
+  private printHelp(): void {
+    console.log(chalk.dim("\n  Commands:"));
+    console.log(chalk.dim("    /help     — Show this help"));
+    console.log(chalk.dim("    /clear    — Clear conversation history"));
+    console.log(chalk.dim("    /files    — Show indexed file tree"));
+    console.log(chalk.dim("    /models   — List and switch models"));
+    console.log(chalk.dim("    /agent <name> <prompt> — Run a specific agent"));
+    console.log(chalk.dim("    /exit     — Exit Maxi\n"));
+  }
+
+  stop(): void {
+    this.running = false;
+    this.rl.close();
+  }
+
+  isRunning(): boolean {
+    return this.running;
+  }
+}

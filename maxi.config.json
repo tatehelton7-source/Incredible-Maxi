@@ -1,0 +1,11 @@
+{
+  "defaultProvider": "ollama",
+  "defaultModel": "gpt-oss:120b-cloud",
+  "providers": {
+    "ollama": {
+      "provider": "ollama",
+      "model": "gpt-oss:120b-cloud",
+      "baseURL": "http://localhost:11434/v1"
+    }
+  }
+}

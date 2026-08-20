@@ -1,4 +1,4 @@
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
 import type { MaxiConfig } from "./providers/types.js";
 import { DEFAULT_CONFIG } from "./providers/types.js";
@@ -38,11 +38,42 @@ export function loadConfig(): MaxiConfig {
   return config;
 }
 
+const CONFIG_PATH = resolve(process.cwd(), "maxi.config.json");
+
+export function saveConfigValue<K extends keyof MaxiConfig>(key: K, value: MaxiConfig[K]): void {
+  let existing: Partial<MaxiConfig> = {};
+  if (existsSync(CONFIG_PATH)) {
+    try {
+      existing = JSON.parse(readFileSync(CONFIG_PATH, "utf-8")) as Partial<MaxiConfig>;
+    } catch {
+      // Malformed existing file — overwrite rather than merge garbage into it.
+    }
+  }
+  const updated = { ...existing, [key]: value };
+  writeFileSync(CONFIG_PATH, JSON.stringify(updated, null, 2) + "\n", "utf-8");
+}
+
+export function isConfigGitignored(): boolean {
+  const gitignorePath = resolve(process.cwd(), ".gitignore");
+  if (!existsSync(gitignorePath)) return false;
+  try {
+    const lines = readFileSync(gitignorePath, "utf-8").split("\n").map((l) => l.trim());
+    return lines.includes("maxi.config.json") || lines.includes("/maxi.config.json");
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Validate that the config has at least one usable provider.
  * Returns an error message string if invalid, or null if valid.
  */
-export function validateConfig(config: MaxiConfig): string | null {
+const LOCAL_PROVIDER_IDS = ["ollama", "lmstudio", "vllm", "llamacpp"];
+
+export function validateConfig(config: MaxiConfig, resolvedProvider?: string): string | null {
+  if (resolvedProvider && LOCAL_PROVIDER_IDS.includes(resolvedProvider)) {
+    return null;
+  }
   const hasOpenAI = !!config.openaiApiKey;
   const hasAnthropic = !!config.anthropicApiKey;
   const hasNVIDIA = !!config.nvidiaApiKey;

@@ -10,8 +10,11 @@ import type { MaxiConfig } from "./types.js";
  * Supports:
  * - openai (direct)
  * - anthropic (direct)
- * - nvidia (direct - OpenAI-compatible)
- * - omniroute (custom OpenAI-compatible endpoint)
+ * - nvidia (OpenAI-compatible)
+ * - ollama (via OLLAMA_HOST or localBackend.baseURL)
+ * - lmstudio (via localBackend.baseURL)
+ * - vllm (via localBackend.baseURL)
+ * - llamacpp (via localBackend.baseURL)
  */
 export function buildRegistry(config: MaxiConfig) {
   const providers: Record<string, ReturnType<typeof createOpenAICompatible> | typeof openai | typeof anthropic> = {
@@ -21,6 +24,29 @@ export function buildRegistry(config: MaxiConfig) {
       name: "nvidia",
       apiKey: config.nvidiaApiKey || process.env.NVIDIA_API_KEY || "",
       baseURL: "https://integrate.api.nvidia.com/v1",
+    }),
+    // Ollama's OLLAMA_HOST convention is a root URL; its OpenAI-compat
+    // endpoint lives under /v1 on that same root.
+    ollama: createOpenAICompatible({
+      name: "ollama",
+      apiKey: "ollama", // unused by Ollama, but the SDK requires a non-empty string
+      baseURL: `${(config.localBackends?.ollama?.baseURL || process.env.OLLAMA_HOST || "http://localhost:11434").replace(/\/$/, "")}/v1`,
+    }),
+    // LM Studio / vLLM / llama.cpp configs store the /v1 base directly.
+    lmstudio: createOpenAICompatible({
+      name: "lmstudio",
+      apiKey: "lmstudio",
+      baseURL: config.localBackends?.lmstudio?.baseURL || "http://localhost:1234/v1",
+    }),
+    vllm: createOpenAICompatible({
+      name: "vllm",
+      apiKey: "vllm",
+      baseURL: config.localBackends?.vllm?.baseURL || "http://localhost:8000/v1",
+    }),
+    llamacpp: createOpenAICompatible({
+      name: "llamacpp",
+      apiKey: "llamacpp",
+      baseURL: config.localBackends?.llamacpp?.baseURL || "http://localhost:8080/v1",
     }),
   };
 
@@ -49,7 +75,7 @@ export function buildRegistry(config: MaxiConfig) {
     }
   }
 
-  return createProviderRegistry(providers);
+return createProviderRegistry(providers);
 }
 
 /**
