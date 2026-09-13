@@ -34,6 +34,7 @@
 
 import { resolve, sep } from "node:path";
 import { platform } from "node:os";
+import { execFileSync } from "node:child_process";
 import { getSandboxRunner } from "./sandbox-runners.js";
 import type { SessionEvent } from "../session/store.js";
 
@@ -190,7 +191,6 @@ function detectWsl(): boolean {
     // distro reports only the "Windows Subsystem for Linux" placeholder, and
     // `docker-desktop` is Docker's internal VM — neither is a usable Maxi
     // sandbox, so neither counts as WSL.
-    const { execFileSync } = require("node:child_process") as typeof import("node:child_process");
     const raw = execFileSync("wsl.exe", ["-l", "-q"], {
       encoding: "buffer",
       stdio: ["ignore", "pipe", "ignore"],

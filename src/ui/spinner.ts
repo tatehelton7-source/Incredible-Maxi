@@ -2,7 +2,39 @@ import ora from "ora";
 import chalk from "chalk";
 
 // Valid ora built-in themes
-type OraTheme = "dots" | "line" | "bounce" | "clock" | "earth" | "moon" | "simple" | "arrow" | "hamburger" | "growVertical" | "growHorizontal" | "noise" | "bouncingBar" | "bouncingBall" | "smiley" | "monkey" | "hearts" | "clock" | "earth" | "moon" | "runner" | "aesthetic" | "christmas" | "grenade" | "point" | "layer" | "betaWave" | "fingerDance" | "fistBump" | "soccerHeader" | "mindblown" | "orangePulse" | "bluePulse" | "orangeRedPulse" | "timeTravel" | "aesthetic" | "christmas" | "grenade" | "point" | "layer" | "betaWave" | "fingerDance" | "fistBump" | "soccerHeader" | "mindblown" | "orangePulse" | "bluePulse" | "orangeRedPulse" | "timeTravel";
+type OraTheme =
+  | "dots"
+  | "line"
+  | "bounce"
+  | "clock"
+  | "earth"
+  | "moon"
+  | "simpleDots"
+  | "arrow"
+  | "hamburger"
+  | "growVertical"
+  | "growHorizontal"
+  | "noise"
+  | "bouncingBar"
+  | "bouncingBall"
+  | "smiley"
+  | "monkey"
+  | "hearts"
+  | "runner"
+  | "aesthetic"
+  | "christmas"
+  | "grenade"
+  | "point"
+  | "layer"
+  | "betaWave"
+  | "fingerDance"
+  | "fistBump"
+  | "soccerHeader"
+  | "mindblown"
+  | "orangePulse"
+  | "bluePulse"
+  | "orangeBluePulse"
+  | "timeTravel";
 
 // Custom themes for thinking animations
 const customSpinners: Record<string, { frames: string[]; interval: number }> = {
@@ -44,19 +76,19 @@ export class Spinner {
     const spinnerConfig = this.getSpinnerConfig(this.theme);
     this.spinner = ora({
       text: "",
-      spinner: spinnerConfig as any,
+      spinner: spinnerConfig,
       color: "cyan",
       discardStdin: false,
     });
   }
 
-  private getSpinnerConfig(theme: SpinnerTheme): any {
+  private getSpinnerConfig(theme: SpinnerTheme): OraTheme | { frames: string[]; interval: number } {
     // Check if it's a custom theme
     if (customSpinners[theme]) {
       return customSpinners[theme];
     }
     // Return built-in theme name
-    return theme as string;
+    return theme as OraTheme;
   }
 
   start(text?: string): void {
@@ -90,7 +122,7 @@ export class Spinner {
   setTheme(theme: SpinnerTheme): void {
     this.theme = theme;
     const spinnerConfig = this.getSpinnerConfig(theme);
-    this.spinner.spinner = spinnerConfig as any;
+    this.spinner.spinner = spinnerConfig;
   }
 
   isEnabled(): boolean {

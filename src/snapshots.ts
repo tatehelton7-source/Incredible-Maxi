@@ -1,4 +1,4 @@
-import { execFile, spawn } from "node:child_process";
+import { execFile, execSync, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import { existsSync, mkdirSync, cpSync, rmSync } from "node:fs";
 import { join } from "node:path";
@@ -231,7 +231,7 @@ export class SnapshotManager {
 
   private detectGit(): boolean {
     try {
-      require("child_process").execSync("git rev-parse --is-inside-work-tree", {
+      execSync("git rev-parse --is-inside-work-tree", {
         cwd: this.cwd,
         stdio: "ignore",
         env: scrubEnv(),

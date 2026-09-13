@@ -42,6 +42,8 @@ import type { Tool } from "./tools/types.js";
 import type { SnapshotManager } from "./snapshots.js";
 import { getTheme, listThemes, isValidTheme, type Theme } from "./ui/themes.js";
 import { randomUUID } from "node:crypto";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import {
   SessionStore,
   getInterruptedCall,
@@ -1458,8 +1460,6 @@ export class Repl {
       console.log(chalk.dim("  No conversation to export.\n"));
       return;
     }
-    const { writeFileSync, mkdirSync, existsSync } = require("node:fs") as typeof import("node:fs");
-    const { join } = require("node:path") as typeof import("node:path");
     const exportDir = join(process.cwd(), ".maxi", "exports");
     if (!existsSync(exportDir)) {
       mkdirSync(exportDir, { recursive: true });
