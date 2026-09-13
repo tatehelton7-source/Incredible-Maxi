@@ -116,7 +116,10 @@ export class SessionStore {
     await this.ensureDir();
     const events = await this.readAll(sessionId);
     const full: SessionEvent = { ...event, seq: events.length, ts: Date.now(), sessionId };
-    await appendFile(this.path(sessionId), JSON.stringify(full) + "\n", "utf-8");
+    await appendFile(this.path(sessionId), JSON.stringify(full) + "\n", {
+      encoding: "utf-8",
+      mode: 0o600,
+    });
   }
 
   /**
@@ -127,7 +130,10 @@ export class SessionStore {
     this.ensureDirSync();
     const events = this.readAllSync(sessionId);
     const full: SessionEvent = { ...event, seq: events.length, ts: Date.now(), sessionId };
-    appendFileSync(this.path(sessionId), JSON.stringify(full) + "\n", "utf-8");
+    appendFileSync(this.path(sessionId), JSON.stringify(full) + "\n", {
+      encoding: "utf-8",
+      mode: 0o600,
+    });
   }
 
   /** Read all events for a session, in order. Returns [] if the session does not exist. */
