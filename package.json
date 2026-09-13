@@ -20,11 +20,18 @@
         "@ai-sdk/openai": "^4.0.23",
         "@ai-sdk/openai-compatible": "^3.0.16",
         "@modelcontextprotocol/sdk": "^1.30.0",
+        "@mozilla/readability": "^0.6.0",
+        "@types/jsdom": "^30.0.0",
+        "@types/turndown": "^5.0.6",
         "ai": "^7.0.41",
         "chalk": "^6.0.0",
         "commander": "^15.0.0",
         "gray-matter": "^4.0.3",
-        "node-fetch": "^3.3.2"
+        "jsdom": "^30.0.1",
+        "node-fetch": "^3.3.2",
+        "ora": "^9.4.1",
+        "turndown": "^7.2.4",
+        "zod": "^4.4.3"
     },
     "devDependencies": {
         "@eslint/js": "^10.0.1",

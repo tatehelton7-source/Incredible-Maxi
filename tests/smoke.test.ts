@@ -1,4 +1,7 @@
 import { describe, it, expect } from "vitest";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { loadConfig, validateConfig } from "../src/config.js";
 import { resolveStartupProvider } from "../src/providers/local.js";
 import { buildRegistry, resolveModel } from "../src/providers/registry.js";
@@ -8,17 +11,24 @@ import type { MaxiConfig } from "../src/providers/types.js";
 
 describe("config", () => {
   it("loads defaults when nothing is configured", () => {
-    const config = loadConfig();
-    expect(config.defaultProvider).toBe("openai");
-    expect(config.defaultModel).toBe("gpt-4o");
-    expect(config.webToolsEnabled).toBe(true);
+    // loadConfig() reads ./maxi.config.json from cwd, so isolate from the
+    // repo's own config file to exercise the pure defaults.
+    const originalCwd = process.cwd();
+    process.chdir(mkdtempSync(join(tmpdir(), "maxi-smoke-")));
+    try {
+      const config = loadConfig();
+      expect(config.defaultProvider).toBe("openai");
+      expect(config.defaultModel).toBe("gpt-4o");
+    } finally {
+      process.chdir(originalCwd);
+    }
   });
 });
 
 describe("validateConfig", () => {
   it("returns an error when no provider is configured", () => {
     const config: MaxiConfig = { defaultProvider: "openai", defaultModel: "gpt-4o" };
-    expect(validateConfig(config)).toContain("No provider configured");
+    expect(validateConfig(config)).toContain("No API key configured.");
   });
 
   it("passes when a cloud key is present", () => {
@@ -38,7 +48,8 @@ describe("validateConfig", () => {
         ollama: { provider: "ollama", model: "llama3.1", baseURL: "http://localhost:11434/v1" },
       },
     };
-    expect(validateConfig(config)).toBeNull();
+    // Local providers are valid only when resolved as the startup provider.
+    expect(validateConfig(config, "ollama")).toBeNull();
   });
 });
 

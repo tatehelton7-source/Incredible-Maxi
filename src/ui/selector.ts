@@ -108,8 +108,18 @@ function nextModelIndex(rows: Row[], current: number, dir: 1 | -1): number {
   return current;
 }
 
-function render(rows: Row[], cursor: number, width: number, refreshing: boolean): void {
-  clearScreen();
+/** Renders a single model row line (with or without the highlight marker). */
+function renderModelLine(row: Extract<Row, { kind: "model" }>, isCursor: boolean, width: number): string {
+  const marker = isCursor ? chalk.cyan("▸") : " ";
+  const dot = statusDot(row.model.status);
+  const text = modelLine(row.model);
+  const providerTag = chalk.dim(row.model.provider.toUpperCase());
+  const rendered = `${marker} ${dot} ${isCursor ? chalk.bold(text) : text}  ${providerTag}`;
+  return padLine(rendered, width);
+}
+
+/** Builds the full menu as an array of lines (one per terminal row). */
+function buildLines(rows: Row[], cursor: number, width: number, refreshing: boolean): string[] {
   const lines: string[] = [];
   lines.push(boxTop("MAXI // MODEL SELECT", width));
 
@@ -127,13 +137,7 @@ function render(rows: Row[], cursor: number, width: number, refreshing: boolean)
       lines.push(padLine(`  ${row.label}`, width));
       continue;
     }
-    const isCursor = i === cursor;
-    const marker = isCursor ? chalk.cyan("▸") : " ";
-    const dot = statusDot(row.model.status);
-    const text = modelLine(row.model);
-    const providerTag = chalk.dim(row.model.provider.toUpperCase());
-    const rendered = `${marker} ${dot} ${isCursor ? chalk.bold(text) : text}  ${providerTag}`;
-    lines.push(padLine(rendered, width));
+    lines.push(renderModelLine(row, i === cursor, width));
   }
 
   lines.push(boxDivider(width));
@@ -141,7 +145,33 @@ function render(rows: Row[], cursor: number, width: number, refreshing: boolean)
   lines.push(padLine(chalk.dim(`↑↓ Select   ENTER Use   C Configure   R Refresh   Q Quit${refreshTag}`), width));
   lines.push(boxBottom(width));
 
+  return lines;
+}
+
+/**
+ * Full redraw: clears the screen and writes the entire menu. Used for the
+ * initial draw and for refresh (R). Returns the built lines so the caller can
+ * know the total row count for incremental updates.
+ */
+function render(rows: Row[], cursor: number, width: number, refreshing: boolean): string[] {
+  const lines = buildLines(rows, cursor, width, refreshing);
+  clearScreen();
   process.stdout.write(lines.join("\n") + "\n");
+  return lines;
+}
+
+/**
+ * Incremental update of a single model row. Positions the cursor to the row's
+ * terminal line and rewrites just that line (plus clear-to-end-of-line so a
+ * shorter line never leaves trailing characters). This is what makes the
+ * highlight "slide" without repainting the whole menu.
+ *
+ * Row `i` occupies lines[1 + i]; line 0 (boxTop) is terminal row 1, so the
+ * terminal row for row `i` is `i + 2`.
+ */
+function updateModelLine(row: Extract<Row, { kind: "model" }>, isCursor: boolean, width: number, rowIndex: number): void {
+  const terminalRow = rowIndex + 2;
+  process.stdout.write(`\x1b[${terminalRow};1H${renderModelLine(row, isCursor, width)}\x1b[K`);
 }
 
 /**
@@ -165,7 +195,8 @@ export async function runSelectorUI(
   return withExclusiveKeypress<SelectorResult>(() => {
     return new Promise((resolve) => {
       let refreshing = false;
-      render(rows, cursor, width, refreshing);
+      const lines = render(rows, cursor, width, refreshing);
+      const totalLines = lines.length;
 
       const cleanup = () => {
         process.stdin.removeListener("keypress", onKeypress);
@@ -184,13 +215,19 @@ export async function runSelectorUI(
           return;
         }
         if (key.name === "up" && cursor !== -1) {
+          const prev = cursor;
           cursor = nextModelIndex(rows, cursor, -1);
-          render(rows, cursor, width, refreshing);
+          updateModelLine(rows[prev] as Extract<Row, { kind: "model" }>, false, width, prev);
+          updateModelLine(rows[cursor] as Extract<Row, { kind: "model" }>, true, width, cursor);
+          process.stdout.write(`\x1b[${totalLines};1H`);
           return;
         }
         if (key.name === "down" && cursor !== -1) {
+          const prev = cursor;
           cursor = nextModelIndex(rows, cursor, 1);
-          render(rows, cursor, width, refreshing);
+          updateModelLine(rows[prev] as Extract<Row, { kind: "model" }>, false, width, prev);
+          updateModelLine(rows[cursor] as Extract<Row, { kind: "model" }>, true, width, cursor);
+          process.stdout.write(`\x1b[${totalLines};1H`);
           return;
         }
         if (key.name === "return" && cursor !== -1) {

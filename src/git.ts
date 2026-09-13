@@ -1,6 +1,7 @@
 import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import type { Tool, ToolResult } from "./tools/types.js";
+import { scrubEnv } from "./tools/env.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -10,7 +11,7 @@ function spawnAsync(
   options: { cwd?: string; input?: string } = {}
 ): Promise<{ stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
-    const proc = spawn(command, args, { cwd: options.cwd });
+    const proc = spawn(command, args, { cwd: options.cwd, env: scrubEnv() });
     let stdout = "";
     let stderr = "";
     proc.stdout?.on("data", (data) => (stdout += data.toString()));
@@ -34,7 +35,7 @@ export interface GitConfig {
 
 export async function gitStatus(cwd: string): Promise<ToolResult> {
   try {
-    const { stdout } = await execFileAsync("git", ["status", "--porcelain"], { cwd });
+    const { stdout } = await execFileAsync("git", ["status", "--porcelain"], { cwd, env: scrubEnv() });
     return { success: true, output: stdout || "Working tree clean" };
   } catch (err) {
     return { success: false, output: "", error: `git status failed: ${(err as Error).message}` };
@@ -44,7 +45,7 @@ export async function gitStatus(cwd: string): Promise<ToolResult> {
 export async function gitDiff(cwd: string, staged: boolean = false): Promise<ToolResult> {
   try {
     const args = staged ? ["diff", "--cached"] : ["diff"];
-    const { stdout } = await execFileAsync("git", args, { cwd });
+    const { stdout } = await execFileAsync("git", args, { cwd, env: scrubEnv() });
     return { success: true, output: stdout || "No changes" };
   } catch (err) {
     return { success: false, output: "", error: `git diff failed: ${(err as Error).message}` };
@@ -53,7 +54,7 @@ export async function gitDiff(cwd: string, staged: boolean = false): Promise<Too
 
 export async function gitLog(cwd: string, count: number = 10): Promise<ToolResult> {
   try {
-    const { stdout } = await execFileAsync("git", ["log", "--oneline", `-${count}`], { cwd });
+    const { stdout } = await execFileAsync("git", ["log", "--oneline", `-${count}`], { cwd, env: scrubEnv() });
     return { success: true, output: stdout };
   } catch (err) {
     return { success: false, output: "", error: `git log failed: ${(err as Error).message}` };
@@ -63,7 +64,7 @@ export async function gitLog(cwd: string, count: number = 10): Promise<ToolResul
 export async function gitAdd(cwd: string, files: string[]): Promise<ToolResult> {
   try {
     const args = ["add", "--", ...files];
-    await execFileAsync("git", args, { cwd });
+    await execFileAsync("git", args, { cwd, env: scrubEnv() });
     return { success: true, output: `Staged ${files.length > 0 ? files.length : "all"} files` };
   } catch (err) {
     return { success: false, output: "", error: `git add failed: ${(err as Error).message}` };
@@ -84,7 +85,7 @@ export async function gitCommit(cwd: string, message: string): Promise<ToolResul
 
 export async function gitBranch(cwd: string): Promise<ToolResult> {
   try {
-    const { stdout } = await execFileAsync("git", ["branch", "-a"], { cwd });
+    const { stdout } = await execFileAsync("git", ["branch", "-a"], { cwd, env: scrubEnv() });
     return { success: true, output: stdout };
   } catch (err) {
     return { success: false, output: "", error: `git branch failed: ${(err as Error).message}` };
@@ -96,7 +97,7 @@ export async function gitCheckout(cwd: string, branch: string): Promise<ToolResu
     if (!/^[a-zA-Z0-9._/-]+$/.test(branch)) {
       return { success: false, output: "", error: `Invalid branch name: ${branch}` };
     }
-    const { stdout } = await execFileAsync("git", ["checkout", branch], { cwd });
+    const { stdout } = await execFileAsync("git", ["checkout", branch], { cwd, env: scrubEnv() });
     return { success: true, output: stdout || `Switched to branch ${branch}` };
   } catch (err) {
     return { success: false, output: "", error: `git checkout failed: ${(err as Error).message}` };

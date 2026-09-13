@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Tool, ToolResult } from "../tools/types.js";
 import type { PluginContext } from "./types.js";
+import { scrubEnv } from "../tools/env.js";
 
 interface SubprocessPluginConfig {
   name: string;
@@ -51,6 +52,7 @@ export class SubprocessPluginLoader {
       const proc = spawn(config.command, config.args, {
         cwd: config.cwd || process.cwd(),
         stdio: ["pipe", "pipe", "pipe"],
+        env: scrubEnv(),
       });
 
       this.processes.set(config.name, proc);

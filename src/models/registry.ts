@@ -39,12 +39,20 @@ export async function discoverAll(config: MaxiConfig): Promise<RegistrySnapshot>
   const sourceStatus: Record<string, ModelStatus> = {};
   const sourceLabels: Record<string, string> = {};
 
+  // Track seen model IDs to deduplicate (e.g., Ollama from both built-in and custom source)
+  const seenModelIds = new Set<string>();
+
   for (const result of results) {
     if (result.status !== "fulfilled") continue;
     const { source, models, status } = result.value;
     sourceStatus[source.id] = status;
     sourceLabels[source.id] = source.label;
-    (source.location === "local" ? local : api).push(...models);
+    
+    for (const model of models) {
+      if (seenModelIds.has(model.id)) continue;
+      seenModelIds.add(model.id);
+      (source.location === "local" ? local : api).push(model);
+    }
   }
 
   return { local, api, sourceStatus, sourceLabels };

@@ -8,7 +8,7 @@ function getKey(config: MaxiConfig): string | undefined {
 async function fetchModels(key: string) {
   return fetch("https://integrate.api.nvidia.com/v1/models", {
     headers: { Authorization: `Bearer ${key}` },
-    signal: AbortSignal.timeout(2000),
+    signal: AbortSignal.timeout(1000),
   });
 }
 

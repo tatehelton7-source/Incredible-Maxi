@@ -7,6 +7,9 @@ export function terminalWidth(): number {
 }
 
 export function clearScreen(): void {
+  // Clear the entire screen then move cursor to home (0,0).
+  // Without the clear, redrawing a shorter menu leaves leftover lines from the
+  // previous render visible below, causing the stacked/repasted effect.
   process.stdout.write("\x1b[2J\x1b[H");
 }
 

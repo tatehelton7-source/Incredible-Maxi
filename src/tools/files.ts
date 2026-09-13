@@ -2,8 +2,12 @@ import { readFile, writeFile, readdir, stat } from "node:fs/promises";
 import { existsSync, realpathSync } from "node:fs";
 import { join, resolve, relative, isAbsolute } from "node:path";
 import type { Tool, ToolResult } from "./types.js";
+import { createPathGuard } from "./sandbox.js";
 
 const PROJECT_ROOT = resolve(process.cwd());
+
+/** Phase 4.2 — file tools cannot write outside the project root. */
+const pathGuard = createPathGuard([PROJECT_ROOT]);
 
 function validatePath(path: string): string {
   const absolute = isAbsolute(path) ? path : resolve(PROJECT_ROOT, path);
@@ -26,6 +30,7 @@ async function read(path: string): Promise<ToolResult> {
 
 async function write(path: string, content: string): Promise<ToolResult> {
   try {
+    pathGuard.assertWithinRoots(path);
     const safePath = validatePath(path);
     await writeFile(safePath, content, "utf-8");
     return { success: true, output: `Wrote ${content.length} bytes to ${path}` };
@@ -36,6 +41,7 @@ async function write(path: string, content: string): Promise<ToolResult> {
 
 async function edit(path: string, oldString: string, newString: string): Promise<ToolResult> {
   try {
+    pathGuard.assertWithinRoots(path);
     const safePath = validatePath(path);
     const content = await readFile(safePath, "utf-8");
     const occurrences = content.split(oldString).length - 1;

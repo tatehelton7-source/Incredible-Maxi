@@ -35,6 +35,7 @@ export async function withExclusiveKeypress<T>(fn: () => Promise<T>): Promise<T>
   }
 
   const wasRaw = input.isRaw;
+  const wasPaused = input.isPaused();
   input.setRawMode(true);
   input.resume();
 
@@ -42,6 +43,11 @@ export async function withExclusiveKeypress<T>(fn: () => Promise<T>): Promise<T>
     return await fn();
   } finally {
     input.setRawMode(wasRaw);
+    if (wasPaused) {
+      input.pause();
+    } else {
+      input.resume();
+    }
     for (const listener of previousListeners) {
       input.on("keypress", listener);
     }
